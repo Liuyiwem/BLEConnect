@@ -2,5 +2,5 @@ package com.example.bleconnect;
 
 public interface OnPackageFoundCallback {
 
-    void onGetFirmwareVersionSucceeded(String firmwareVersion);
+    void onPackageFoundSucceeded(byte[] reply);
 }

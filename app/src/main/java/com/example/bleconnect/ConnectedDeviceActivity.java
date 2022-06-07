@@ -1,8 +1,6 @@
 package com.example.bleconnect;
 
-import static android.Manifest.permission.*;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -14,7 +12,6 @@ import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Looper;
 import android.util.Log;
@@ -22,14 +19,9 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.res.TypedArrayUtils;
-
 import java.io.UnsupportedEncodingException;
-import java.util.Arrays;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
@@ -47,8 +39,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
     private BluetoothAdapter mBluetoothAdapter;
     private BluetoothGatt mBluetoothGatt;
     private BluetoothGattService mBluetoothGattService;
-    private OnPackageFoundCallback onPackageFoundCallback;
-    private OnTimeOutCallback onTimeOutCallback;
+    public OnTimeOutCallback onTimeOutCallback;
     private boolean isNotified = false;
     private boolean isConnected = false;
     private byte[] buffer = new byte[9999];
@@ -59,6 +50,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
     private byte[] msg;
     private static Lock lock = new ReentrantLock();
     private static Condition condition = lock.newCondition();
+    private PackageCheck packageCheck;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -74,7 +66,8 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
         super.onStart();
         setViews();
         bleConnected();
-
+        setCallback();
+        packageCheck = new PackageCheck();
     }
 
     private void initViews() {
@@ -92,27 +85,30 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
                 } else {
                     bleDisconnected();
                 }
-
             }
         });
         mBtnGetFirmwareVersion.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-
                 if (isNotified && isConnected) {
                     getFirmwareVersion();
-                    setOnPackageFoundCallback(new OnPackageFoundCallback() {
+                    packageCheck.setOnPackageFoundCallback(new OnPackageFoundCallback() {
                         @Override
-                        public void onGetFirmwareVersionSucceeded(String firmwareVersion) {
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    mFirmwareVersion.setText(firmwareVersion);
-                                }
-                            });
+                        public void onPackageFoundSucceeded(byte[] reply) {
+                            int parameterLength = reply[3];
+                            try {
+                                firmwareVersion = new String(reply, 4, parameterLength, "ASCII");
+                                runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        mFirmwareVersion.setText(firmwareVersion);
+                                    }
+                                });
+                            } catch (UnsupportedEncodingException e) {
+                                e.printStackTrace();
+                            }
                         }
                     });
-
                 }
             }
         });
@@ -194,19 +190,13 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
             Log.d(TAG, "onCharacteristicWrite: " + status);
         }
 
-        @SuppressLint("MissingPermission")
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
             super.onServicesDiscovered(gatt, status);
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 Log.d(TAG, "onServicesDiscovered: " + status);
-                mBluetoothGattService = gatt.getService(UUID.fromString("0000FFF0-000-1000-8000-00805F9B34FB"));
-                BluetoothGattCharacteristic mBluetoothGattCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF3-000-1000-8000-00805F9B34FB"));
-                Log.d(TAG, "getCharacteristics: " + mBluetoothGattCharacteristic.getDescriptors().get(0).toString());
-                mBluetoothGatt.setCharacteristicNotification(mBluetoothGattCharacteristic, true);
-                BluetoothGattDescriptor mDescriptor = mBluetoothGattCharacteristic.getDescriptor(UUID.fromString("00002902-000-1000-8000-00805F9B34FB"));
-                mDescriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                mBluetoothGatt.writeDescriptor(mDescriptor);
+                setDescriptor(gatt);
+
             }
         }
 
@@ -214,84 +204,28 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             super.onCharacteristicChanged(gatt, characteristic);
             Log.d(TAG, "onCharacteristicChanged: " + characteristic.getValue());
-            receiveData(characteristic);
+            packageCheck.receiveData(characteristic);
         }
     };
+    @SuppressLint("MissingPermission")
+    private void setDescriptor(BluetoothGatt gatt){
+        mBluetoothGattService = gatt.getService(UUID.fromString("0000FFF0-000-1000-8000-00805F9B34FB"));
+        BluetoothGattCharacteristic mBluetoothGattCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF3-000-1000-8000-00805F9B34FB"));
+        Log.d(TAG, "getCharacteristics: " + mBluetoothGattCharacteristic.getDescriptors().get(0).toString());
+        mBluetoothGatt.setCharacteristicNotification(mBluetoothGattCharacteristic, true);
+        BluetoothGattDescriptor mDescriptor = mBluetoothGattCharacteristic.getDescriptor(UUID.fromString("00002902-000-1000-8000-00805F9B34FB"));
+        mDescriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+        mBluetoothGatt.writeDescriptor(mDescriptor);
+    }
 
-    public void receiveData(BluetoothGattCharacteristic characteristic) {
+    private void setCallback() {
 
         setOnTimeOutCallback(new OnTimeOutCallback() {
-
             @Override
-            public void TimeOutCallbackFunction(int bufferLengthNow) {
-                ConnectedDeviceActivity.this.bufferLengthNow = bufferLengthNow;
-                buffer = new byte[9999];
+            public void TimeOutCallbackFunction() {
+                packageCheck.removeData();
             }
         });
-
-        lock.lock();
-        byte[] rec;
-        rec = characteristic.getValue();
-        System.arraycopy(rec, 0, buffer, bufferLengthNow, rec.length);
-        bufferLengthNow += rec.length;
-
-        //Remove data
-        if (buffer[0] != 0x01) {
-            int newBufferLengthNow = 0;
-            for (int i = 0; i < bufferLengthNow; i++) {
-                if (buffer[i] == 0x01) {
-                    for (int j = 0; j < bufferLengthNow; j++) {
-                        buffer[j] = buffer[i + j];
-                    }
-                    newBufferLengthNow = i;
-                    break;
-                }
-                newBufferLengthNow = i + 1;
-            }
-            bufferLengthNow -= newBufferLengthNow;
-        }
-
-        //Find Header
-        while (buffer[0] == 0x01) {
-
-            //Find Parameter Length
-            if (bufferLengthNow >= 4) {
-                int parameterLength = buffer[3];
-                packetLength = parameterLength + 6;
-
-                //Copy Package to reply
-                if (bufferLengthNow >= packetLength) {
-                    reply = new byte[packetLength];
-                    System.arraycopy(buffer, 0, reply, 0, packetLength);
-
-                    //Remove copied package of buffer
-                    for (int i = 0; i < bufferLengthNow; i++) {
-                        buffer[i] = buffer[i + packetLength];
-                    }
-                    bufferLengthNow -= packetLength;
-                    packetLength = 0;
-
-                    if (reply[2] == 0x06) {
-                        try {
-                            int crc = (((reply[parameterLength + 4] & 0xFF) << 8) + (reply[parameterLength + 5] & 0xFF));
-                            GNetPlus gNetPlus = new GNetPlus();
-                            int crrCheck = gNetPlus.gNetPlusCRC16(reply, 1, parameterLength + 3);
-                            if (crc == crrCheck) {
-                                firmwareVersion = new String(reply, 4, parameterLength, "ASCII");
-                                onPackageFoundCallback.onGetFirmwareVersionSucceeded(firmwareVersion);
-                                condition.signalAll();
-                            }
-                        } catch (UnsupportedEncodingException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            }
-            //Package not complete
-            if (bufferLengthNow < packetLength || bufferLengthNow < 4)
-                break;
-        }
-        lock.unlock();
     }
 
     @SuppressLint("MissingPermission")
@@ -302,24 +236,20 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
             @Override
             public void run() {
                 try {
-                    lock.lockInterruptibly();
+                    packageCheck.lock.lockInterruptibly();
                     timer.schedule(new TimeOutTask(Thread.currentThread()), 5000);
                     BluetoothGattCharacteristic whiteCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF4-000-1000-8000-00805F9B34FB"));
                     msg = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
                     whiteCharacteristic.setValue(msg);
                     mBluetoothGatt.writeCharacteristic(whiteCharacteristic);
-                    condition.await();
+                    packageCheck.condition.await();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 } finally {
-                    lock.unlock();
+                    packageCheck.lock.unlock();
                 }
             }
         }).start();
-    }
-
-    public void setOnPackageFoundCallback(OnPackageFoundCallback onPackageFoundCallback) {
-        this.onPackageFoundCallback = onPackageFoundCallback;
     }
 
     public void setOnTimeOutCallback(OnTimeOutCallback onTimeOutCallback) {
@@ -329,22 +259,21 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
     public class TimeOutTask extends TimerTask {
 
         Thread t;
+
         TimeOutTask(Thread t) {
             this.t = t;
         }
 
         @Override
         public void run() {
-            int bufferLengthNow = 0;
-            onTimeOutCallback.TimeOutCallbackFunction(bufferLengthNow);
 
+            onTimeOutCallback.TimeOutCallbackFunction();
             if (t != null && t.isAlive()) {
                 t.interrupt();
                 Looper.prepare();
                 Toast.makeText(ConnectedDeviceActivity.this, "Time Out", Toast.LENGTH_SHORT).show();
                 Looper.loop();
             }
-
         }
     }
 }
