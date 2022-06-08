@@ -42,15 +42,12 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
     public OnTimeOutCallback onTimeOutCallback;
     private boolean isNotified = false;
     private boolean isConnected = false;
-    private byte[] buffer = new byte[9999];
-    private byte[] reply;
-    private int bufferLengthNow = 0;
-    private int packetLength;
     private String firmwareVersion;
     private byte[] msg;
-    private static Lock lock = new ReentrantLock();
-    private static Condition condition = lock.newCondition();
     private PackageCheck packageCheck;
+    public final static Lock lock = new ReentrantLock();
+    public final static Condition condition = lock.newCondition();
+    private Command command;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -66,8 +63,9 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
         super.onStart();
         setViews();
         bleConnected();
-        setCallback();
-        packageCheck = new PackageCheck();
+//        setCallback();
+        packageCheck = new PackageCheck(lock,condition);
+
     }
 
     private void initViews() {
@@ -91,7 +89,8 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 if (isNotified && isConnected) {
-                    getFirmwareVersion();
+//                    getFirmwareVersion();
+                    command.command();
                     packageCheck.setOnPackageFoundCallback(new OnPackageFoundCallback() {
                         @Override
                         public void onPackageFoundSucceeded(byte[] reply) {
@@ -196,7 +195,8 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 Log.d(TAG, "onServicesDiscovered: " + status);
                 setDescriptor(gatt);
-
+                command = new Command(mBluetoothGattService,mBluetoothGatt,ConnectedDeviceActivity.this,lock,condition);
+//                setCallback();
             }
         }
 
@@ -218,62 +218,62 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
         mBluetoothGatt.writeDescriptor(mDescriptor);
     }
 
-    private void setCallback() {
+//    private void setCallback() {
+//
+//        command.setOnTimeOutCallback(new OnTimeOutCallback() {
+//            @Override
+//            public void TimeOutCallbackFunction() {
+//                packageCheck.removeData();
+//            }
+//        });
+//    }
 
-        setOnTimeOutCallback(new OnTimeOutCallback() {
-            @Override
-            public void TimeOutCallbackFunction() {
-                packageCheck.removeData();
-            }
-        });
-    }
-
-    @SuppressLint("MissingPermission")
-    public void getFirmwareVersion() {
-        new Thread(new Runnable() {
-            Timer timer = new Timer(true);
-
-            @Override
-            public void run() {
-                try {
-                    packageCheck.lock.lockInterruptibly();
-                    timer.schedule(new TimeOutTask(Thread.currentThread()), 5000);
-                    BluetoothGattCharacteristic whiteCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF4-000-1000-8000-00805F9B34FB"));
-                    msg = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
-                    whiteCharacteristic.setValue(msg);
-                    mBluetoothGatt.writeCharacteristic(whiteCharacteristic);
-                    packageCheck.condition.await();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } finally {
-                    packageCheck.lock.unlock();
-                }
-            }
-        }).start();
-    }
-
-    public void setOnTimeOutCallback(OnTimeOutCallback onTimeOutCallback) {
-        this.onTimeOutCallback = onTimeOutCallback;
-    }
-
-    public class TimeOutTask extends TimerTask {
-
-        Thread t;
-
-        TimeOutTask(Thread t) {
-            this.t = t;
-        }
-
-        @Override
-        public void run() {
-
-            onTimeOutCallback.TimeOutCallbackFunction();
-            if (t != null && t.isAlive()) {
-                t.interrupt();
-                Looper.prepare();
-                Toast.makeText(ConnectedDeviceActivity.this, "Time Out", Toast.LENGTH_SHORT).show();
-                Looper.loop();
-            }
-        }
-    }
+//    @SuppressLint("MissingPermission")
+//    public void getFirmwareVersion() {
+//        new Thread(new Runnable() {
+//            Timer timer = new Timer(true);
+//
+//            @Override
+//            public void run() {
+//                try {
+//                    lock.lockInterruptibly();
+//                    timer.schedule(new TimeOutTask(Thread.currentThread()), 5000);
+//                    BluetoothGattCharacteristic whiteCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF4-000-1000-8000-00805F9B34FB"));
+//                    msg = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
+//                    whiteCharacteristic.setValue(msg);
+//                    mBluetoothGatt.writeCharacteristic(whiteCharacteristic);
+//                    condition.await();
+//                } catch (InterruptedException e) {
+//                    e.printStackTrace();
+//                } finally {
+//                    lock.unlock();
+//                }
+//            }
+//        }).start();
+//    }
+//
+//    public void setOnTimeOutCallback(OnTimeOutCallback onTimeOutCallback) {
+//        this.onTimeOutCallback = onTimeOutCallback;
+//    }
+//
+//    public class TimeOutTask extends TimerTask {
+//
+//        Thread t;
+//
+//        TimeOutTask(Thread t) {
+//            this.t = t;
+//        }
+//
+//        @Override
+//        public void run() {
+//
+//            onTimeOutCallback.TimeOutCallbackFunction();
+//            if (t != null && t.isAlive()) {
+//                t.interrupt();
+//                Looper.prepare();
+//                Toast.makeText(ConnectedDeviceActivity.this, "Time Out", Toast.LENGTH_SHORT).show();
+//                Looper.loop();
+//            }
+//        }
+//    }
 }

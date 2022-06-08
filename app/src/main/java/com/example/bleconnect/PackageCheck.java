@@ -1,6 +1,7 @@
 package com.example.bleconnect;
 
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.util.Log;
 
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -8,18 +9,28 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class PackageCheck {
 
-    public final static Lock lock = new ReentrantLock();
-    public byte[] buffer = new byte[9999];
-    public int bufferLengthNow;
+//    public final static Lock lock = new ReentrantLock();
+    private static final String TAG = PackageCheck.class.getSimpleName();
+    private byte[] buffer = new byte[9999];
+    private int bufferLengthNow;
     private int packetLength;
     private byte[] reply;
-    public final static Condition condition = lock.newCondition();
-    public OnPackageFoundCallback onPackageFoundCallback;
+//    public final static Condition condition = lock.newCondition();
+    private OnPackageFoundCallback onPackageFoundCallback;
+    private Lock mLock;
+    private Condition mCondition;
 
+    protected PackageCheck(Lock lock,Condition condition){
+        this.mLock = lock;
+        this.mCondition = condition;
+    }
+    protected PackageCheck(){
+
+    }
 
     public void receiveData(BluetoothGattCharacteristic characteristic) {
 
-        lock.lock();
+        mLock.lock();
         byte[] rec;
         rec = characteristic.getValue();
         System.arraycopy(rec, 0, buffer, bufferLengthNow, rec.length);
@@ -67,7 +78,7 @@ public class PackageCheck {
                         int crrCheck = gNetPlus.gNetPlusCRC16(reply, 1, parameterLength + 3);
                         if (crc == crrCheck) {
                             onPackageFoundCallback.onPackageFoundSucceeded(reply);
-                            condition.signalAll();
+                            mCondition.signalAll();
                         }
                     }
                 }
@@ -76,7 +87,7 @@ public class PackageCheck {
             if (bufferLengthNow < packetLength || bufferLengthNow < 4)
                 break;
         }
-        lock.unlock();
+        mLock.unlock();
     }
 
     public void setOnPackageFoundCallback(OnPackageFoundCallback onPackageFoundCallback) {
