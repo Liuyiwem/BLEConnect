@@ -47,7 +47,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
     private PackageCheck packageCheck;
     public final static Lock lock = new ReentrantLock();
     public final static Condition condition = lock.newCondition();
-    private Command command;
+    private Commands commands;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -65,7 +65,6 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
         bleConnected();
 //        setCallback();
         packageCheck = new PackageCheck(lock,condition);
-
     }
 
     private void initViews() {
@@ -90,7 +89,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
             public void onClick(View view) {
                 if (isNotified && isConnected) {
 //                    getFirmwareVersion();
-                    command.command();
+                    commands.getFirmwareVersion();
                     packageCheck.setOnPackageFoundCallback(new OnPackageFoundCallback() {
                         @Override
                         public void onPackageFoundSucceeded(byte[] reply) {
@@ -195,7 +194,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 Log.d(TAG, "onServicesDiscovered: " + status);
                 setDescriptor(gatt);
-                command = new Command(mBluetoothGattService,mBluetoothGatt,ConnectedDeviceActivity.this,lock,condition);
+                commands = new Commands(mBluetoothGattService,mBluetoothGatt,ConnectedDeviceActivity.this,lock,condition,packageCheck);
 //                setCallback();
             }
         }

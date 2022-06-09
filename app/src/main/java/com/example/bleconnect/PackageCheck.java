@@ -9,23 +9,20 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class PackageCheck {
 
-//    public final static Lock lock = new ReentrantLock();
+    //    public final static Lock lock = new ReentrantLock();
     private static final String TAG = PackageCheck.class.getSimpleName();
     private byte[] buffer = new byte[9999];
     private int bufferLengthNow;
     private int packetLength;
     private byte[] reply;
-//    public final static Condition condition = lock.newCondition();
+    //    public final static Condition condition = lock.newCondition();
     private OnPackageFoundCallback onPackageFoundCallback;
     private Lock mLock;
     private Condition mCondition;
 
-    protected PackageCheck(Lock lock,Condition condition){
+    protected PackageCheck(Lock lock, Condition condition) {
         this.mLock = lock;
         this.mCondition = condition;
-    }
-    protected PackageCheck(){
-
     }
 
     public void receiveData(BluetoothGattCharacteristic characteristic) {
@@ -77,8 +74,10 @@ public class PackageCheck {
                         GNetPlus gNetPlus = new GNetPlus();
                         int crrCheck = gNetPlus.gNetPlusCRC16(reply, 1, parameterLength + 3);
                         if (crc == crrCheck) {
-                            onPackageFoundCallback.onPackageFoundSucceeded(reply);
-                            mCondition.signalAll();
+                            if (onPackageFoundCallback != null) {
+                                onPackageFoundCallback.onPackageFoundSucceeded(reply);
+                                mCondition.signalAll();
+                            }
                         }
                     }
                 }
@@ -94,7 +93,7 @@ public class PackageCheck {
         this.onPackageFoundCallback = onPackageFoundCallback;
     }
 
-    public void removeData(){
+    public void removeData() {
         bufferLengthNow = 0;
         buffer = new byte[9999];
     }

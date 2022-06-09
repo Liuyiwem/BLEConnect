@@ -12,12 +12,11 @@ import android.widget.Toast;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 
-public class Command {
+public class CommandThread {
 
     private BluetoothGattService mBluetoothGattService;
     private BluetoothGatt mBluetoothGatt;
@@ -26,46 +25,52 @@ public class Command {
     private Context mContext;
     private Lock mLock;
     private Condition mCondition;
-    private final static String TAG = Command.class.getSimpleName();
+    private final static String TAG = CommandThread.class.getSimpleName();
     private PackageCheck mPackageCheck;
 
-    protected Command(BluetoothGattService bluetoothGattService, BluetoothGatt bluetoothGatt, Context context, Lock lock, Condition condition) {
+    protected CommandThread(BluetoothGattService bluetoothGattService, BluetoothGatt bluetoothGatt, Context context, Lock lock, Condition condition,PackageCheck packageCheck) {
         this.mBluetoothGattService = bluetoothGattService;
         this.mBluetoothGatt = bluetoothGatt;
         this.mContext = context;
         this.mCondition = condition;
         this.mLock = lock;
-        mPackageCheck = new PackageCheck();
+        this.mPackageCheck = packageCheck;
+        setCallback();
 
     }
 
-    public void command() {
-        ExecutorService executorService =  Executors.newSingleThreadExecutor();
-        setCallback();
-        executorService.execute(new Runnable() {
-            Timer timer = new Timer(true);
+    public class Runnable implements java.lang.Runnable {
+        private ArrayBlockingQueue<byte[]> queue;
 
-            @SuppressLint("MissingPermission")
-            @Override
-            public void run() {
-                try {
-                    mLock.lockInterruptibly();
-                    timer.schedule(new TimeOutTask(Thread.currentThread()), 5000);
-                    Log.d(TAG, "run: "+Thread.currentThread().getName());
-                    BluetoothGattCharacteristic whiteCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF4-000-1000-8000-00805F9B34FB"));
-                    msg = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
-                    whiteCharacteristic.setValue(msg);
-                    mBluetoothGatt.writeCharacteristic(whiteCharacteristic);
-                    mCondition.await();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } finally {
-                    mLock.unlock();
-                    executorService.shutdown();
-                }
+        protected Runnable(ArrayBlockingQueue<byte[]> queue) {
+            this.queue = queue;
+        }
+
+        Timer timer = new Timer(true);
+
+        @SuppressLint("MissingPermission")
+        @Override
+        public void run() {
+            try {
+                mLock.lockInterruptibly();
+//                msg = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
+//                queue.put(msg);
+                msg = queue.peek();
+//                timer.schedule(new TimeOutTask(Thread.currentThread()), 5000);
+                Log.d(TAG, "run: " + Thread.currentThread().getName());
+                BluetoothGattCharacteristic whiteCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF4-000-1000-8000-00805F9B34FB"));
+                whiteCharacteristic.setValue(msg);
+                mBluetoothGatt.writeCharacteristic(whiteCharacteristic);
+                mCondition.await();
+
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                mLock.unlock();
+                queue.poll();
+
             }
-        });
-
+        }
     }
 
     public class TimeOutTask extends TimerTask {
@@ -89,11 +94,11 @@ public class Command {
         }
     }
 
-    public void setOnTimeOutCallback(OnTimeOutCallback onTimeOutCallback) {
+    private void setOnTimeOutCallback(OnTimeOutCallback onTimeOutCallback) {
         this.onTimeOutCallback = onTimeOutCallback;
     }
 
-    private void setCallback() {
+    public void setCallback() {
 
         setOnTimeOutCallback(new OnTimeOutCallback() {
             @Override
