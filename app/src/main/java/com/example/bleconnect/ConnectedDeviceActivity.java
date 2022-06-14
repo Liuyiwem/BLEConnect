@@ -19,8 +19,11 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+
 import java.io.UnsupportedEncodingException;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -31,6 +34,9 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class ConnectedDeviceActivity extends AppCompatActivity {
     private static final String TAG = ConnectedDeviceActivity.class.getSimpleName();
+    private static final String BLE_SERVICE = "0000FFF0-000-1000-8000-00805F9B34FB";
+    private static final String BLE_NOTIFY_CHARACTERISTIC = "0000FFF3-000-1000-8000-00805F9B34FB";
+    private static final String BLE_DESCRIPTOR = "00002902-000-1000-8000-00805F9B34FB";
     public static final String SELECTED_DEVICE = "SELECTED_DEVICE";
     private ScannedData selectedDevice;
     private TextView mDeviceName, mMacAddress, mConnectStatus, mFirmwareVersion;
@@ -39,15 +45,12 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
     private BluetoothAdapter mBluetoothAdapter;
     private BluetoothGatt mBluetoothGatt;
     private BluetoothGattService mBluetoothGattService;
-    public OnTimeOutCallback onTimeOutCallback;
     private boolean isNotified = false;
     private boolean isConnected = false;
-    private String firmwareVersion;
-    private byte[] msg;
-    private PackageCheck packageCheck;
-    public final static Lock lock = new ReentrantLock();
-    public final static Condition condition = lock.newCondition();
-    private Commands commands;
+    private PackageCheck mPackageCheck;
+    private final static Lock mLock = new ReentrantLock();
+    private final static Condition mCondition = mLock.newCondition();
+    private Commands mCommands;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -63,8 +66,13 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
         super.onStart();
         setViews();
         bleConnected();
-//        setCallback();
-        packageCheck = new PackageCheck(lock,condition);
+        mPackageCheck = new PackageCheck(mLock, mCondition);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        bleDisconnected();
     }
 
     private void initViews() {
@@ -88,25 +96,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 if (isNotified && isConnected) {
-//                    getFirmwareVersion();
-                    commands.getFirmwareVersion();
-                    packageCheck.setOnPackageFoundCallback(new OnPackageFoundCallback() {
-                        @Override
-                        public void onPackageFoundSucceeded(byte[] reply) {
-                            int parameterLength = reply[3];
-                            try {
-                                firmwareVersion = new String(reply, 4, parameterLength, "ASCII");
-                                runOnUiThread(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        mFirmwareVersion.setText(firmwareVersion);
-                                    }
-                                });
-                            } catch (UnsupportedEncodingException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    });
+                    getFirmwareVersion();
                 }
             }
         });
@@ -194,8 +184,8 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 Log.d(TAG, "onServicesDiscovered: " + status);
                 setDescriptor(gatt);
-                commands = new Commands(mBluetoothGattService,mBluetoothGatt,ConnectedDeviceActivity.this,lock,condition,packageCheck);
-//                setCallback();
+                mCommands = new Commands(mPackageCheck);
+                setCommandsCallbacks();
             }
         }
 
@@ -203,76 +193,40 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             super.onCharacteristicChanged(gatt, characteristic);
             Log.d(TAG, "onCharacteristicChanged: " + characteristic.getValue());
-            packageCheck.receiveData(characteristic);
+            mPackageCheck.receiveData(characteristic);
         }
     };
+
     @SuppressLint("MissingPermission")
-    private void setDescriptor(BluetoothGatt gatt){
-        mBluetoothGattService = gatt.getService(UUID.fromString("0000FFF0-000-1000-8000-00805F9B34FB"));
-        BluetoothGattCharacteristic mBluetoothGattCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF3-000-1000-8000-00805F9B34FB"));
+    private void setDescriptor(@NonNull BluetoothGatt gatt) {
+        mBluetoothGattService = gatt.getService(UUID.fromString(BLE_SERVICE));
+        BluetoothGattCharacteristic mBluetoothGattCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString(BLE_NOTIFY_CHARACTERISTIC));
         Log.d(TAG, "getCharacteristics: " + mBluetoothGattCharacteristic.getDescriptors().get(0).toString());
         mBluetoothGatt.setCharacteristicNotification(mBluetoothGattCharacteristic, true);
-        BluetoothGattDescriptor mDescriptor = mBluetoothGattCharacteristic.getDescriptor(UUID.fromString("00002902-000-1000-8000-00805F9B34FB"));
+        BluetoothGattDescriptor mDescriptor = mBluetoothGattCharacteristic.getDescriptor(UUID.fromString(BLE_DESCRIPTOR));
         mDescriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
         mBluetoothGatt.writeDescriptor(mDescriptor);
     }
 
-//    private void setCallback() {
-//
-//        command.setOnTimeOutCallback(new OnTimeOutCallback() {
-//            @Override
-//            public void TimeOutCallbackFunction() {
-//                packageCheck.removeData();
-//            }
-//        });
-//    }
+    private void setCommandsCallbacks(){
+        mCommands.setOnCommandsCallback(new OnCommandsCallback() {
+            @Override
+            public void onGetFirmwareVersionSucceed(String firmwareVersion) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mFirmwareVersion.setText(firmwareVersion);
+                    }
+                });
+            }
+        });
+    }
 
-//    @SuppressLint("MissingPermission")
-//    public void getFirmwareVersion() {
-//        new Thread(new Runnable() {
-//            Timer timer = new Timer(true);
-//
-//            @Override
-//            public void run() {
-//                try {
-//                    lock.lockInterruptibly();
-//                    timer.schedule(new TimeOutTask(Thread.currentThread()), 5000);
-//                    BluetoothGattCharacteristic whiteCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF4-000-1000-8000-00805F9B34FB"));
-//                    msg = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
-//                    whiteCharacteristic.setValue(msg);
-//                    mBluetoothGatt.writeCharacteristic(whiteCharacteristic);
-//                    condition.await();
-//                } catch (InterruptedException e) {
-//                    e.printStackTrace();
-//                } finally {
-//                    lock.unlock();
-//                }
-//            }
-//        }).start();
-//    }
-//
-//    public void setOnTimeOutCallback(OnTimeOutCallback onTimeOutCallback) {
-//        this.onTimeOutCallback = onTimeOutCallback;
-//    }
-//
-//    public class TimeOutTask extends TimerTask {
-//
-//        Thread t;
-//
-//        TimeOutTask(Thread t) {
-//            this.t = t;
-//        }
-//
-//        @Override
-//        public void run() {
-//
-//            onTimeOutCallback.TimeOutCallbackFunction();
-//            if (t != null && t.isAlive()) {
-//                t.interrupt();
-//                Looper.prepare();
-//                Toast.makeText(ConnectedDeviceActivity.this, "Time Out", Toast.LENGTH_SHORT).show();
-//                Looper.loop();
-//            }
-//        }
-//    }
+    private void getFirmwareVersion(){
+        mCommands.getFirmwareVersion();
+        new CommandThread(mBluetoothGattService, mBluetoothGatt
+                , ConnectedDeviceActivity.this
+                , mLock, mCondition, mCommands);
+    }
+
 }

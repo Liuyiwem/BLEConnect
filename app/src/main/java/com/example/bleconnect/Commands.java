@@ -3,34 +3,55 @@ package com.example.bleconnect;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattService;
 import android.content.Context;
+import android.util.Log;
 
+import java.io.UnsupportedEncodingException;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingDeque;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 
-public class Commands extends CommandThread {
-    private Thread thread;
-    ArrayBlockingQueue<byte[]> queue = new ArrayBlockingQueue(1);
-    private byte[] msg;
+public class Commands {
 
+    private byte[] mCommandCode;
+    private PackageCheck mPackageCheck;
+    private String firmwareVersion;
+    private OnCommandsCallback mOnCommandsCallback;
+    private final static String TAG = Commands.class.getSimpleName();
 
-    protected Commands(BluetoothGattService bluetoothGattService, BluetoothGatt bluetoothGatt, Context context, Lock lock, Condition condition,PackageCheck packageCheck) {
-        super(bluetoothGattService, bluetoothGatt, context, lock, condition,packageCheck);
-
+    protected Commands(PackageCheck packageCheck) {
+        this.mPackageCheck = packageCheck;
     }
 
     public void getFirmwareVersion() {
 
-        try {
-            msg = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
-            queue.put(msg);
-            thread = new Thread(new CommandThread.Runnable(queue));
-            thread.start();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
+        mCommandCode = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
+        mPackageCheck.setOnPackageFoundCallback(new OnPackageFoundCallback() {
+            @Override
+            public void onPackageFoundSucceeded(byte[] reply) {
+                if (mOnCommandsCallback != null) {
+                    int parameterLength = reply[3];
+                    try {
+                        firmwareVersion = new String(reply, 4, parameterLength, "ASCII");
+                        mOnCommandsCallback.onGetFirmwareVersionSucceed(firmwareVersion);
+                    } catch (UnsupportedEncodingException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
     }
+
+    public void setOnCommandsCallback(OnCommandsCallback onCommandsCallback) {
+        this.mOnCommandsCallback = onCommandsCallback;
+    }
+
+    public byte[] getCommandCode() {
+        Log.d(TAG, "getCommandCode: ");
+        return mCommandCode;
+    }
+
+    public void remove(){
+        mPackageCheck.removeData();
+    }
+
 }

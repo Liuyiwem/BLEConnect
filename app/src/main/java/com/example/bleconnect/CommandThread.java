@@ -18,33 +18,32 @@ import java.util.concurrent.locks.Lock;
 
 public class CommandThread {
 
+    private final String CHARACTERISTIC_WRITE = "0000FFF4-000-1000-8000-00805F9B34FB";
     private BluetoothGattService mBluetoothGattService;
     private BluetoothGatt mBluetoothGatt;
-    private byte[] msg;
+    private byte[] mCommandCode;
     private OnTimeOutCallback onTimeOutCallback;
     private Context mContext;
     private Lock mLock;
     private Condition mCondition;
     private final static String TAG = CommandThread.class.getSimpleName();
     private PackageCheck mPackageCheck;
+    private Thread thread;
+    private Commands mCommands;
 
-    protected CommandThread(BluetoothGattService bluetoothGattService, BluetoothGatt bluetoothGatt, Context context, Lock lock, Condition condition,PackageCheck packageCheck) {
+    protected CommandThread(BluetoothGattService bluetoothGattService, BluetoothGatt bluetoothGatt, Context context, Lock lock, Condition condition, Commands commands) {
         this.mBluetoothGattService = bluetoothGattService;
         this.mBluetoothGatt = bluetoothGatt;
         this.mContext = context;
         this.mCondition = condition;
         this.mLock = lock;
-        this.mPackageCheck = packageCheck;
+        this.mCommands = commands;
+        thread = new Thread(new Runnable());
+        thread.start();
         setCallback();
-
     }
 
     public class Runnable implements java.lang.Runnable {
-        private ArrayBlockingQueue<byte[]> queue;
-
-        protected Runnable(ArrayBlockingQueue<byte[]> queue) {
-            this.queue = queue;
-        }
 
         Timer timer = new Timer(true);
 
@@ -52,41 +51,40 @@ public class CommandThread {
         @Override
         public void run() {
             try {
-                mLock.lockInterruptibly();
-//                msg = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
-//                queue.put(msg);
-                msg = queue.peek();
-//                timer.schedule(new TimeOutTask(Thread.currentThread()), 5000);
-                Log.d(TAG, "run: " + Thread.currentThread().getName());
-                BluetoothGattCharacteristic whiteCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString("0000FFF4-000-1000-8000-00805F9B34FB"));
-                whiteCharacteristic.setValue(msg);
-                mBluetoothGatt.writeCharacteristic(whiteCharacteristic);
-                mCondition.await();
+                synchronized (mCommands) {
+                    mLock.lockInterruptibly();
+                    mCommandCode = mCommands.getCommandCode();
+                    timer.schedule(new TimeOutTask(Thread.currentThread()), 5000);
+                    Log.d(TAG, "run: " + Thread.currentThread().getName());
+                    BluetoothGattCharacteristic whiteCharacteristic = mBluetoothGattService.getCharacteristic(UUID.fromString(CHARACTERISTIC_WRITE));
+                    whiteCharacteristic.setValue(mCommandCode);
+                    mBluetoothGatt.writeCharacteristic(whiteCharacteristic);
+                    mCondition.await();
+                }
 
             } catch (InterruptedException e) {
                 e.printStackTrace();
             } finally {
                 mLock.unlock();
-                queue.poll();
-
             }
         }
     }
 
     public class TimeOutTask extends TimerTask {
 
-        Thread t;
+        Thread mThread;
 
-        TimeOutTask(Thread t) {
-            this.t = t;
+        TimeOutTask(Thread thread) {
+            this.mThread = thread;
         }
 
         @Override
         public void run() {
-
-            onTimeOutCallback.TimeOutCallbackFunction();
-            if (t != null && t.isAlive()) {
-                t.interrupt();
+            if (onTimeOutCallback != null) {
+                onTimeOutCallback.TimeOutCallbackFunction();
+            }
+            if (mThread != null && mThread.isAlive()) {
+                mThread.interrupt();
                 Looper.prepare();
                 Toast.makeText(mContext, "Time Out", Toast.LENGTH_SHORT).show();
                 Looper.loop();
@@ -94,7 +92,7 @@ public class CommandThread {
         }
     }
 
-    private void setOnTimeOutCallback(OnTimeOutCallback onTimeOutCallback) {
+    public void setOnTimeOutCallback(OnTimeOutCallback onTimeOutCallback) {
         this.onTimeOutCallback = onTimeOutCallback;
     }
 
@@ -103,10 +101,9 @@ public class CommandThread {
         setOnTimeOutCallback(new OnTimeOutCallback() {
             @Override
             public void TimeOutCallbackFunction() {
-                mPackageCheck.removeData();
+                mCommands.remove();
             }
         });
     }
-
 
 }

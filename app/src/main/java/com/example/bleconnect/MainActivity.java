@@ -1,5 +1,7 @@
 package com.example.bleconnect;
 
+import static android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY;
+
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -12,13 +14,16 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.ParcelUuid;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -28,6 +33,7 @@ import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.List;
+import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -44,7 +50,7 @@ public class MainActivity extends AppCompatActivity {
     private ScanCallback scanCallback;
     private Button mBtnScan;
     private BluetoothLeScanner mBluetoothScanner;
-
+    private List<ScanFilter> scanFilters = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -113,10 +119,17 @@ public class MainActivity extends AppCompatActivity {
                             mBtnScan.setText("start");
                         }
                     }, SCAN_PERIOD);
+                    ScanSettings scanSettings = new ScanSettings.Builder()
+                            .setScanMode(SCAN_MODE_LOW_LATENCY)
+                            .build();
+                    scanFilters.add(new ScanFilter.Builder()
+                            .setServiceUuid(new ParcelUuid(UUID.fromString("0000FFF0-000-1000-8000-00805F9B34FB")))
+                            .build());
+
 
                     isScanning = true;
                     mAdapter.clearDevice();
-                    mBluetoothScanner.startScan(scanCallback);
+                    mBluetoothScanner.startScan(scanFilters,scanSettings,scanCallback);
                     mBtnScan.setText("stop");
 
                 } else {
@@ -158,6 +171,7 @@ public class MainActivity extends AppCompatActivity {
                     if (Device_name == null) {
                         Device_name = "N/A";
                     }
+                    Log.d(TAG, "onScanResult: "+Device_name);
                     device.add(new ScannedData(Device_name,
                             String.valueOf(result.getRssi()),
                             String.valueOf(result.getDevice())));
