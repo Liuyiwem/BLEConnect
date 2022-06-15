@@ -23,27 +23,23 @@ public class CommandThread {
     private BluetoothGatt mBluetoothGatt;
     private byte[] mCommandCode;
     private OnTimeOutCallback onTimeOutCallback;
-    private Context mContext;
     private Lock mLock;
     private Condition mCondition;
     private final static String TAG = CommandThread.class.getSimpleName();
-    private PackageCheck mPackageCheck;
     private Thread thread;
     private Commands mCommands;
 
-    protected CommandThread(BluetoothGattService bluetoothGattService, BluetoothGatt bluetoothGatt, Context context, Lock lock, Condition condition, Commands commands) {
+    protected CommandThread(BluetoothGattService bluetoothGattService, BluetoothGatt bluetoothGatt, Lock lock, Condition condition, Commands commands) {
         this.mBluetoothGattService = bluetoothGattService;
         this.mBluetoothGatt = bluetoothGatt;
-        this.mContext = context;
         this.mCondition = condition;
         this.mLock = lock;
         this.mCommands = commands;
-        thread = new Thread(new Runnable());
+        thread = new Thread(new RunCommand());
         thread.start();
-        setCallback();
     }
 
-    public class Runnable implements java.lang.Runnable {
+    private class RunCommand implements Runnable {
 
         Timer timer = new Timer(true);
 
@@ -70,7 +66,7 @@ public class CommandThread {
         }
     }
 
-    public class TimeOutTask extends TimerTask {
+    private class TimeOutTask extends TimerTask {
 
         Thread mThread;
 
@@ -80,30 +76,18 @@ public class CommandThread {
 
         @Override
         public void run() {
-            if (onTimeOutCallback != null) {
-                onTimeOutCallback.TimeOutCallbackFunction();
-            }
+
             if (mThread != null && mThread.isAlive()) {
                 mThread.interrupt();
-                Looper.prepare();
-                Toast.makeText(mContext, "Time Out", Toast.LENGTH_SHORT).show();
-                Looper.loop();
+                if (onTimeOutCallback != null) {
+                    onTimeOutCallback.TimeOutCallbackFunction();
+                }
             }
         }
     }
 
     public void setOnTimeOutCallback(OnTimeOutCallback onTimeOutCallback) {
         this.onTimeOutCallback = onTimeOutCallback;
-    }
-
-    public void setCallback() {
-
-        setOnTimeOutCallback(new OnTimeOutCallback() {
-            @Override
-            public void TimeOutCallbackFunction() {
-                mCommands.remove();
-            }
-        });
     }
 
 }

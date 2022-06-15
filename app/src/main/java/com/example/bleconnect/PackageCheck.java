@@ -37,7 +37,7 @@ public class PackageCheck {
         if (buffer[0] != HEADER_BIT) {
             int newBufferLengthNow = 0;
             for (int i = 0; i < bufferLengthNow; i++) {
-                if (buffer[i] == 0x01) {
+                if (buffer[i] == HEADER_BIT) {
                     for (int j = 0; j < bufferLengthNow; j++) {
                         buffer[j] = buffer[i + j];
                     }
@@ -67,7 +67,8 @@ public class PackageCheck {
                         buffer[i] = buffer[i + packetLength];
                     }
                     bufferLengthNow -= packetLength;
-                    packetLength = 0;
+                    parameterLength = buffer[3];
+                    packetLength = parameterLength + 6;
 
                     //Receive Succeed
                     if (reply[2] == COMMAND_SUCCEED) {
@@ -81,7 +82,13 @@ public class PackageCheck {
                             }
                         }
                     }
-
+                    //Receive fail
+                    if (reply[2] != COMMAND_SUCCEED) {
+                        if (onPackageFoundCallback != null) {
+                            onPackageFoundCallback.onPackageFoundFailed(reply);
+                            mCondition.signal();
+                        }
+                    }
                 }
             }
             //Package not complete

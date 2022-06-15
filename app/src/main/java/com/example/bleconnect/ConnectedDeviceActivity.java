@@ -51,6 +51,7 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
     private final static Lock mLock = new ReentrantLock();
     private final static Condition mCondition = mLock.newCondition();
     private Commands mCommands;
+    private CommandThread mCommandThread;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -219,14 +220,38 @@ public class ConnectedDeviceActivity extends AppCompatActivity {
                     }
                 });
             }
+
+            @Override
+            public void onCommandsFailed(int errorCode) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mFirmwareVersion.setText(String.valueOf(errorCode));
+                    }
+                });
+            }
         });
     }
 
     private void getFirmwareVersion(){
         mCommands.getFirmwareVersion();
-        new CommandThread(mBluetoothGattService, mBluetoothGatt
-                , ConnectedDeviceActivity.this
-                , mLock, mCondition, mCommands);
+        mCommandThread = new CommandThread(mBluetoothGattService, mBluetoothGatt, mLock, mCondition, mCommands);
+        setCommandTimeoutCallback();
+    }
+
+    private void setCommandTimeoutCallback(){
+        if (mCommandThread != null) {
+            mCommandThread.setOnTimeOutCallback(new OnTimeOutCallback() {
+                @Override
+                public void TimeOutCallbackFunction() {
+                    mPackageCheck.removeData();
+                    Looper.prepare();
+                    Toast.makeText(ConnectedDeviceActivity.this, "Time Out", Toast.LENGTH_SHORT).show();
+                    Looper.loop();
+                }
+            });
+        }
+
     }
 
 }

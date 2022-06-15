@@ -20,12 +20,24 @@ public class Commands {
 
     protected Commands(PackageCheck packageCheck) {
         this.mPackageCheck = packageCheck;
+        packageFoundCallback();
     }
 
     public void getFirmwareVersion() {
-
         mCommandCode = new byte[]{0x01, 0x00, 0x10, 0x01, 0x00, 0x71, 0x00};
+    }
+
+    public void setOnCommandsCallback(OnCommandsCallback onCommandsCallback) {
+        this.mOnCommandsCallback = onCommandsCallback;
+    }
+
+    public byte[] getCommandCode() {
+        Log.d(TAG, "getCommandCode: ");
+        return mCommandCode;
+    }
+    private void packageFoundCallback(){
         mPackageCheck.setOnPackageFoundCallback(new OnPackageFoundCallback() {
+
             @Override
             public void onPackageFoundSucceeded(byte[] reply) {
                 if (mOnCommandsCallback != null) {
@@ -38,20 +50,12 @@ public class Commands {
                     }
                 }
             }
+
+            @Override
+            public void onPackageFoundFailed(byte[] reply) {
+                int errorCode = reply[2];
+                mOnCommandsCallback.onCommandsFailed(errorCode);
+            }
         });
     }
-
-    public void setOnCommandsCallback(OnCommandsCallback onCommandsCallback) {
-        this.mOnCommandsCallback = onCommandsCallback;
-    }
-
-    public byte[] getCommandCode() {
-        Log.d(TAG, "getCommandCode: ");
-        return mCommandCode;
-    }
-
-    public void remove(){
-        mPackageCheck.removeData();
-    }
-
 }
